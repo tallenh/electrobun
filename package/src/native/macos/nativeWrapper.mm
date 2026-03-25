@@ -895,6 +895,7 @@ static NSMutableDictionary<NSNumber *, AbstractView *> *globalAbstractViews = ni
     @property (nonatomic, assign) WindowKeyHandler keyHandler;
     @property (nonatomic, assign) uint32_t windowId;
     @property (nonatomic, strong) NSWindow *window;
+    @property (nonatomic, assign) BOOL forceClose;
 @end
 
 @interface StatusItemTarget : NSObject
@@ -6302,13 +6303,19 @@ CefRefPtr<CefRequestContext> CreateRequestContextForPartition(const char* partit
 
 @implementation WindowDelegate
     - (BOOL)windowShouldClose:(NSWindow *)sender {
-    return YES;
-    }
-    - (void)windowWillClose:(NSNotification *)notification {
-        NSWindow *window = [notification object];
+        if (self.forceClose) {
+            // Programmatic close from JS — allow it.
+            return YES;
+        }
+        // User clicked the close button. Notify JS so it can handle
+        // asynchronously (e.g. unsaved-changes dialogs).
+        // JS calls closeWindow() when ready.
         if (self.closeHandler) {
             self.closeHandler(self.windowId);
         }
+        return NO;
+    }
+    - (void)windowWillClose:(NSNotification *)notification {
     }
    - (void)windowDidResize:(NSNotification *)notification {
         NSWindow *window = [notification object];
@@ -7155,6 +7162,11 @@ extern "C" void setWindowTitle(NSWindow *window, const char *title) {
 
 extern "C" void closeWindow(NSWindow *window) {
     dispatch_sync(dispatch_get_main_queue(), ^{
+        // Set forceClose so windowShouldClose allows this programmatic close.
+        WindowDelegate *delegate = (WindowDelegate *)[window delegate];
+        if (delegate) {
+            delegate.forceClose = YES;
+        }
         [window close];
     });
 }

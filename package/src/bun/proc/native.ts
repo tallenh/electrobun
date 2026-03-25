@@ -849,7 +849,14 @@ export const ffi = {
 			}
 
 			native.symbols.closeWindow(windowPtr);
-			// Note: Cleanup of BrowserWindowMap happens in the windowCloseCallback
+
+			// Emit the close event for cleanup (BrowserWindowMap, exitOnLastWindowClosed).
+			// The native close callback (windowShouldClose) is bypassed via forceClose flag,
+			// so we emit the close event here instead.
+			const handler = electrobunEventEmitter.events.window.close;
+			const event = handler({ id: winId });
+			electrobunEventEmitter.emitEvent(event, winId);
+			electrobunEventEmitter.emitEvent(event);
 		},
 
 		focusWindow: (params: { winId: number }) => {
@@ -1771,15 +1778,23 @@ process.on("SIGTERM", () => {
 
 const windowCloseCallback = new JSCallback(
 	(id) => {
-		const handler = electrobunEventEmitter.events.window.close;
-		const event = handler({
-			id,
-		});
+		// Native always prevents the close and notifies JS here.
+		// If a close-requested handler is registered, let the app decide
+		// asynchronously (e.g. show unsaved-changes dialogs) and call
+		// win.close() when ready.
+		// If no handler is registered, close immediately (default behavior).
+		const hasPerWindowHandler = electrobunEventEmitter.listenerCount(`close-requested-${id}`) > 0;
+		const hasGlobalHandler = electrobunEventEmitter.listenerCount("close-requested") > 0;
 
-		// emit specific event first so user per-window handlers run
-		// before the global handler (e.g. exitOnLastWindowClosed)
-		electrobunEventEmitter.emitEvent(event, id);
-		electrobunEventEmitter.emitEvent(event);
+		if (hasPerWindowHandler || hasGlobalHandler) {
+			const handler = electrobunEventEmitter.events.window.closeRequested;
+			const event = handler({ id });
+			electrobunEventEmitter.emitEvent(event, id);
+			electrobunEventEmitter.emitEvent(event);
+		} else {
+			// Default: close the window immediately via programmatic close.
+			ffi.request.closeWindow({ winId: id });
+		}
 	},
 	{
 		args: ["u32"],

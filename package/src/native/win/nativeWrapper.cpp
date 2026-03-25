@@ -4882,10 +4882,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
 
         case WM_CLOSE:
+            // Always prevent the native close. Notify JS so it can handle
+            // asynchronously, then call closeWindow() when ready.
             if (data && data->closeHandler) {
                 data->closeHandler(data->windowId);
             }
-            break;
+            return 0; // Prevent default close
             
         case WM_MOVE:
             if (data && data->moveHandler) {

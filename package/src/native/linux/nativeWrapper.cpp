@@ -4654,35 +4654,15 @@ static gboolean onMouseMove(GtkWidget* widget, GdkEventMotion* event, gpointer u
 }
 
 // Window delete event callback - handles X button clicks
+// Always prevents the native close. Notifies JS so it can handle
+// asynchronously, then call closeWindow() when ready.
 static gboolean onWindowDeleteEvent(GtkWidget* widget, GdkEvent* event, gpointer user_data) {
-    printf("DEBUG: Window delete event triggered\n");
     ContainerView* container = static_cast<ContainerView*>(user_data);
-    if (container) {
-        printf("DEBUG: Container found for window ID: %u\n", container->windowId);
-        if (container->closeCallback) {
-            printf("DEBUG: Calling close callback for window ID: %u\n", container->windowId);
-            container->closeCallback(container->windowId);
-        } else {
-            printf("DEBUG: No close callback set for window ID: %u\n", container->windowId);
-        }
-    } else {
-        printf("DEBUG: No container found in delete event handler\n");
+    if (container && container->closeCallback) {
+        container->closeCallback(container->windowId);
     }
-    
-    // Hide the window immediately to give user feedback
-    gtk_widget_hide(widget);
-    
-    // Schedule the window destruction on the next iteration of the main loop
-    // This allows the callback to complete before destroying the window
-    g_idle_add_full(G_PRIORITY_HIGH, [](gpointer data) -> gboolean {
-        GtkWidget* window = GTK_WIDGET(data);
-        printf("DEBUG: Destroying window from idle callback\n");
-        gtk_widget_destroy(window);
-        return G_SOURCE_REMOVE;
-    }, widget, nullptr);
-    
-    // Return TRUE to prevent the default handler from running
-    // We're handling the destruction ourselves
+
+    // Return TRUE to prevent the default close — JS will call closeWindow() when ready.
     return TRUE;
 }
 

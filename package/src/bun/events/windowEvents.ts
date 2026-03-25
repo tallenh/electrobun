@@ -12,6 +12,8 @@ type MoveData = { id: number; x: number; y: number };
 type KeyData = { id: number; keyCode: number; modifiers: number; isRepeat: boolean };
 
 export default {
+	closeRequested: (data: IdData) =>
+		new ElectrobunEvent<IdData, {}>("close-requested", data),
 	close: (data: IdData) => new ElectrobunEvent<IdData, {}>("close", data),
 	resize: (data: ResizeData) =>
 		new ElectrobunEvent<ResizeData, {}>("resize", data),
