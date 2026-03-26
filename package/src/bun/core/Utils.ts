@@ -189,6 +189,29 @@ export const openFileDialog = async (
 	return filePaths;
 };
 
+export const saveFileDialog = async (
+	opts: {
+		startingFolder?: string;
+		defaultName?: string;
+		allowedFileTypes?: string;
+	} = {},
+): Promise<string | null> => {
+	const optsWithDefault = {
+		startingFolder: "~/",
+		defaultName: "",
+		allowedFileTypes: "*",
+		...opts,
+	};
+
+	const result = await ffi.request.saveFileDialog({
+		startingFolder: optsWithDefault.startingFolder,
+		defaultName: optsWithDefault.defaultName,
+		allowedFileTypes: optsWithDefault.allowedFileTypes,
+	});
+
+	return result;
+};
+
 export type MessageBoxOptions = {
 	type?: "info" | "warning" | "error" | "question";
 	title?: string;

@@ -563,6 +563,14 @@ export const native = (() => {
 				],
 				returns: FFIType.cstring,
 			},
+			saveFileDialog: {
+				args: [
+					FFIType.cstring, // startingFolder
+					FFIType.cstring, // defaultName
+					FFIType.cstring, // allowedFileTypes
+				],
+				returns: FFIType.cstring,
+			},
 			showMessageBox: {
 				args: [
 					FFIType.cstring, // type
@@ -1517,6 +1525,20 @@ window.__electrobunBunBridge = window.__electrobunBunBridge || window.webkit?.me
 			);
 
 			return filePath.toString();
+		},
+		saveFileDialog: (params: {
+			startingFolder: string;
+			defaultName: string;
+			allowedFileTypes: string;
+		}): string | null => {
+			const { startingFolder, defaultName, allowedFileTypes } = params;
+			const filePath = native.symbols.saveFileDialog(
+				toCString(startingFolder),
+				toCString(defaultName),
+				toCString(allowedFileTypes),
+			);
+
+			return filePath ? filePath.toString() : null;
 		},
 		showMessageBox: (params: {
 			type?: string;

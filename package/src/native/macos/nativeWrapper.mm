@@ -7582,6 +7582,44 @@ extern "C" const char *openFileDialog(const char *startingFolder,
     return (concatenatedPaths) ? strdup([concatenatedPaths UTF8String]) : NULL;
 }
 
+// saveFileDialog - Display a native NSSavePanel for choosing a save location
+// Returns the selected file path, or NULL if cancelled
+extern "C" const char *saveFileDialog(const char *startingFolder,
+                                      const char *defaultName,
+                                      const char *allowedFileTypes) {
+    __block NSString *selectedPath = nil;
+
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        NSSavePanel *panel = [NSSavePanel savePanel];
+
+        NSString *startFolder = [NSString stringWithUTF8String:startingFolder ?: ""];
+        if (startFolder.length > 0) {
+            [panel setDirectoryURL:[NSURL fileURLWithPath:startFolder]];
+        }
+
+        NSString *name = [NSString stringWithUTF8String:defaultName ?: ""];
+        if (name.length > 0) {
+            [panel setNameFieldStringValue:name];
+        }
+
+        if (allowedFileTypes && strcmp(allowedFileTypes, "*") != 0 && strcmp(allowedFileTypes, "") != 0) {
+            NSString *allowedTypesStr = [NSString stringWithUTF8String:allowedFileTypes];
+            NSArray *fileTypesArray = [allowedTypesStr componentsSeparatedByString:@","];
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            [panel setAllowedFileTypes:fileTypesArray];
+            #pragma clang diagnostic pop
+        }
+
+        NSInteger result = [panel runModal];
+        if (result == NSModalResponseOK) {
+            selectedPath = [[panel URL] path];
+        }
+    });
+
+    return (selectedPath) ? strdup([selectedPath UTF8String]) : NULL;
+}
+
 // showMessageBox - Display a native message box dialog with custom buttons
 // type: 0=none, 1=info, 2=warning, 3=error, 4=question
 // buttons: comma-separated list of button labels (e.g., "OK,Cancel")
