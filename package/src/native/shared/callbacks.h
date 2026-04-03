@@ -27,6 +27,11 @@ typedef void (*WindowFocusHandler)(uint32_t windowId);
 typedef void (*WindowBlurHandler)(uint32_t windowId);
 typedef void (*WindowKeyHandler)(uint32_t windowId, uint32_t keyCode, uint32_t modifiers, uint32_t isDown, uint32_t isRepeat);
 
+// Mouse event callbacks
+typedef void (*WindowMouseButtonHandler)(uint32_t windowId, float x, float y, uint32_t button, uint32_t pressed);
+typedef void (*WindowMouseMoveHandler)(uint32_t windowId, float x, float y, uint32_t buttonState);
+typedef void (*WindowScrollHandler)(uint32_t windowId, float dx, float dy, float x, float y);
+
 // Tray and menu callbacks
 typedef void (*StatusItemHandler)(uint32_t trayId, const char* action);
 typedef void (*MenuHandler)(const char* menuItemId);

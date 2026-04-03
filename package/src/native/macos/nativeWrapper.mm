@@ -893,6 +893,9 @@ static NSMutableDictionary<NSNumber *, AbstractView *> *globalAbstractViews = ni
     @property (nonatomic, assign) WindowFocusHandler focusHandler;
     @property (nonatomic, assign) WindowBlurHandler blurHandler;
     @property (nonatomic, assign) WindowKeyHandler keyHandler;
+    @property (nonatomic, assign) WindowMouseButtonHandler mouseButtonHandler;
+    @property (nonatomic, assign) WindowMouseMoveHandler mouseMoveHandler;
+    @property (nonatomic, assign) WindowScrollHandler scrollHandler;
     @property (nonatomic, assign) uint32_t windowId;
     @property (nonatomic, strong) NSWindow *window;
     @property (nonatomic, assign) BOOL forceClose;
@@ -2976,6 +2979,109 @@ runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
                                 0,
                                 0);
         }
+    }
+
+    // --- Mouse input ---
+
+    - (BOOL)isFlipped {
+        // Y=0 at top, matching macOS screen capture coordinate space
+        return YES;
+    }
+
+    - (uint32_t)currentButtonState {
+        NSUInteger pressed = [NSEvent pressedMouseButtons];
+        uint32_t state = 0;
+        if (pressed & (1 << 0)) state |= 1;  // left
+        if (pressed & (1 << 1)) state |= 2;  // right
+        if (pressed & (1 << 2)) state |= 4;  // middle
+        return state;
+    }
+
+    - (void)updateTrackingAreas {
+        for (NSTrackingArea *area in self.trackingAreas) {
+            [self removeTrackingArea:area];
+        }
+        NSTrackingArea *trackingArea = [[NSTrackingArea alloc]
+            initWithRect:self.bounds
+            options:(NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved |
+                     NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect)
+            owner:self
+            userInfo:nil];
+        [self addTrackingArea:trackingArea];
+    }
+
+    // Mouse button events
+    - (void)mouseDown:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseButtonHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseButtonHandler(delegate.windowId, (float)point.x, (float)point.y, 0, 1);
+    }
+    - (void)mouseUp:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseButtonHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseButtonHandler(delegate.windowId, (float)point.x, (float)point.y, 0, 0);
+    }
+    - (void)rightMouseDown:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseButtonHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseButtonHandler(delegate.windowId, (float)point.x, (float)point.y, 1, 1);
+    }
+    - (void)rightMouseUp:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseButtonHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseButtonHandler(delegate.windowId, (float)point.x, (float)point.y, 1, 0);
+    }
+    - (void)otherMouseDown:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseButtonHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseButtonHandler(delegate.windowId, (float)point.x, (float)point.y, 2, 1);
+    }
+    - (void)otherMouseUp:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseButtonHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseButtonHandler(delegate.windowId, (float)point.x, (float)point.y, 2, 0);
+    }
+
+    // Mouse move events
+    - (void)mouseMoved:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseMoveHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseMoveHandler(delegate.windowId, (float)point.x, (float)point.y, [self currentButtonState]);
+    }
+    - (void)mouseDragged:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseMoveHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseMoveHandler(delegate.windowId, (float)point.x, (float)point.y, [self currentButtonState]);
+    }
+    - (void)rightMouseDragged:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseMoveHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseMoveHandler(delegate.windowId, (float)point.x, (float)point.y, [self currentButtonState]);
+    }
+    - (void)otherMouseDragged:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseMoveHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseMoveHandler(delegate.windowId, (float)point.x, (float)point.y, [self currentButtonState]);
+    }
+
+    // Scroll wheel
+    - (void)scrollWheel:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.scrollHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        float dx = (float)[event scrollingDeltaX];
+        float dy = (float)[event scrollingDeltaY];
+        delegate.scrollHandler(delegate.windowId, dx, dy, (float)point.x, (float)point.y);
     }
 @end
 
@@ -7026,7 +7132,10 @@ NSWindow *createNSWindowWithFrameAndStyle(uint32_t windowId,
                                                      WindowResizeHandler zigResizeHandler,
                                                      WindowFocusHandler zigFocusHandler,
                                                      WindowBlurHandler zigBlurHandler,
-                                                     WindowKeyHandler zigKeyHandler) {
+                                                     WindowKeyHandler zigKeyHandler,
+                                                     WindowMouseButtonHandler zigMouseButtonHandler,
+                                                     WindowMouseMoveHandler zigMouseMoveHandler,
+                                                     WindowScrollHandler zigScrollHandler) {
     
     NSScreen *primaryScreen = [NSScreen screens][0];
     NSRect screenFrame = [primaryScreen frame];
@@ -7050,6 +7159,9 @@ NSWindow *createNSWindowWithFrameAndStyle(uint32_t windowId,
     delegate.focusHandler = zigFocusHandler;
     delegate.blurHandler = zigBlurHandler;
     delegate.keyHandler = zigKeyHandler;
+    delegate.mouseButtonHandler = zigMouseButtonHandler;
+    delegate.mouseMoveHandler = zigMouseMoveHandler;
+    delegate.scrollHandler = zigScrollHandler;
     delegate.windowId = windowId;
     delegate.window = window;
     [window setDelegate:delegate];
@@ -7083,7 +7195,10 @@ extern "C" NSWindow *createWindowWithFrameAndStyleFromWorker(
   WindowResizeHandler zigResizeHandler,
   WindowFocusHandler zigFocusHandler,
   WindowBlurHandler zigBlurHandler,
-  WindowKeyHandler zigKeyHandler
+  WindowKeyHandler zigKeyHandler,
+  WindowMouseButtonHandler zigMouseButtonHandler,
+  WindowMouseMoveHandler zigMouseMoveHandler,
+  WindowScrollHandler zigScrollHandler
   ) {
 
     // Validate frame values - use defaults if NaN or invalid
@@ -7112,7 +7227,10 @@ extern "C" NSWindow *createWindowWithFrameAndStyleFromWorker(
             zigResizeHandler,
             zigFocusHandler,
             zigBlurHandler,
-            zigKeyHandler
+            zigKeyHandler,
+            zigMouseButtonHandler,
+            zigMouseMoveHandler,
+            zigScrollHandler
         );
 
         // Handle transparent window background

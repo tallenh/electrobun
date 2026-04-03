@@ -103,6 +103,9 @@ export const native = (() => {
 					FFIType.function, // focusHandler
 					FFIType.function, // blurHandler
 					FFIType.function, // keyHandler
+					FFIType.function, // mouseButtonHandler
+					FFIType.function, // mouseMoveHandler
+					FFIType.function, // scrollHandler
 				],
 				returns: FFIType.ptr,
 			},
@@ -823,6 +826,9 @@ export const ffi = {
 				windowFocusCallback,
 				windowBlurCallback,
 				windowKeyCallback,
+				windowMouseButtonCallback,
+				windowMouseMoveCallback,
+				windowScrollCallback,
 			);
 
 			if (!windowPtr) {
@@ -1920,6 +1926,50 @@ const windowKeyCallback = new JSCallback(
 	},
 	{
 		args: ["u32", "u32", "u32", "u32", "u32"],
+		returns: "void",
+		threadsafe: true,
+	},
+);
+
+const windowMouseButtonCallback = new JSCallback(
+	(id, x, y, button, pressed) => {
+		const handler = pressed
+			? electrobunEventEmitter.events.window.mouseDown
+			: electrobunEventEmitter.events.window.mouseUp;
+		const event = handler({ id, x, y, button });
+		electrobunEventEmitter.emitEvent(event);
+		electrobunEventEmitter.emitEvent(event, id);
+	},
+	{
+		args: ["u32", "f32", "f32", "u32", "u32"],
+		returns: "void",
+		threadsafe: true,
+	},
+);
+
+const windowMouseMoveCallback = new JSCallback(
+	(id, x, y, buttonState) => {
+		const handler = electrobunEventEmitter.events.window.mouseMove;
+		const event = handler({ id, x, y, buttonState });
+		electrobunEventEmitter.emitEvent(event);
+		electrobunEventEmitter.emitEvent(event, id);
+	},
+	{
+		args: ["u32", "f32", "f32", "u32"],
+		returns: "void",
+		threadsafe: true,
+	},
+);
+
+const windowScrollCallback = new JSCallback(
+	(id, dx, dy, x, y) => {
+		const handler = electrobunEventEmitter.events.window.scroll;
+		const event = handler({ id, dx, dy, x, y });
+		electrobunEventEmitter.emitEvent(event);
+		electrobunEventEmitter.emitEvent(event, id);
+	},
+	{
+		args: ["u32", "f32", "f32", "f32", "f32"],
 		returns: "void",
 		threadsafe: true,
 	},
