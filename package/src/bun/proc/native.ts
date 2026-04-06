@@ -538,6 +538,20 @@ export const native = (() => {
 				returns: FFIType.bool,
 			},
 
+			// Keyboard grab (CGEventTap)
+			enableKeyboardGrab: {
+				args: [FFIType.u32], // windowId
+				returns: FFIType.bool,
+			},
+			disableKeyboardGrab: {
+				args: [],
+				returns: FFIType.void,
+			},
+			addKeyboardGrabExclusion: {
+				args: [FFIType.u32, FFIType.u32], // keyCode, modifiers
+				returns: FFIType.bool,
+			},
+
 			// Screen API
 			getAllDisplays: {
 				args: [],
@@ -1095,6 +1109,18 @@ export const ffi = {
 				width: widthBuf[0]!,
 				height: heightBuf[0]!,
 			};
+		},
+
+		enableKeyboardGrab: (params: { winId: number }): boolean => {
+			return native.symbols.enableKeyboardGrab(params.winId);
+		},
+
+		disableKeyboardGrab: (): void => {
+			native.symbols.disableKeyboardGrab();
+		},
+
+		addKeyboardGrabExclusion: (params: { keyCode: number; modifiers: number }): boolean => {
+			return native.symbols.addKeyboardGrabExclusion(params.keyCode, params.modifiers);
 		},
 
 		createWebview: (params: {

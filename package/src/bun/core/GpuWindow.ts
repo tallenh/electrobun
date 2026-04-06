@@ -241,6 +241,34 @@ export class GpuWindow {
 		return { width: frame.width, height: frame.height };
 	}
 
+	/**
+	 * Install a CGEventTap that captures all keyboard events (including system
+	 * shortcuts like Cmd-Tab) while this window is focused.  Events are
+	 * delivered through the normal keyDown/keyUp handlers.
+	 *
+	 * Requires macOS Accessibility permissions.
+	 */
+	grabKeyboard(): boolean {
+		return ffi.request.enableKeyboardGrab({ winId: this.id });
+	}
+
+	/**
+	 * Exclude a key combo from the keyboard grab so it reaches the app's
+	 * menu system instead of being forwarded to the remote side.
+	 * Must be called before or after grabKeyboard().
+	 * Modifiers use the same bitmask as keyDown events (bit 0=Shift, 1=Ctrl, 2=Opt, 3=Cmd).
+	 */
+	addKeyboardGrabExclusion(keyCode: number, modifiers: number): boolean {
+		return ffi.request.addKeyboardGrabExclusion({ keyCode, modifiers });
+	}
+
+	/**
+	 * Remove the CGEventTap installed by grabKeyboard().
+	 */
+	releaseKeyboard(): void {
+		ffi.request.disableKeyboardGrab();
+	}
+
 	on(name: string, handler: (event: unknown) => void) {
 		const specificName = `${name}-${this.id}`;
 		electrobunEventEmitter.on(specificName, handler);

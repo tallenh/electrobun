@@ -2910,19 +2910,22 @@ runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
 
 @end
 
+// Shared modifier bitmask conversion — works with both NSEventModifierFlags
+// and CGEventFlags since the flag constants have identical values.
+static inline uint32_t modifierBitmaskFromFlags(uint64_t flags) {
+    uint32_t mods = 0;
+    if (flags & NSEventModifierFlagShift)   mods |= 1 << 0;
+    if (flags & NSEventModifierFlagControl) mods |= 1 << 1;
+    if (flags & NSEventModifierFlagOption)  mods |= 1 << 2;
+    if (flags & NSEventModifierFlagCommand) mods |= 1 << 3;
+    return mods;
+}
+
 // ----------------------- WGPUViewImpl -----------------------
 @interface WGPUInputView : NSView
 @end
 
 @implementation WGPUInputView
-    - (uint32_t)modifierMaskFromEvent:(NSEvent*)event {
-        uint32_t mods = 0;
-        if ([event modifierFlags] & NSEventModifierFlagShift) mods |= 1 << 0;
-        if ([event modifierFlags] & NSEventModifierFlagControl) mods |= 1 << 1;
-        if ([event modifierFlags] & NSEventModifierFlagOption) mods |= 1 << 2;
-        if ([event modifierFlags] & NSEventModifierFlagCommand) mods |= 1 << 3;
-        return mods;
-    }
     - (void)flagsChanged:(NSEvent*)event {
         WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
         if (!delegate || !delegate.keyHandler) return;
@@ -2950,7 +2953,7 @@ runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
         }
         delegate.keyHandler(delegate.windowId,
                             (uint32_t)[event keyCode],
-                            [self modifierMaskFromEvent:event],
+                            modifierBitmaskFromFlags([event modifierFlags]),
                             isDown,
                             0);
     }
@@ -2965,7 +2968,7 @@ runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
         if (delegate && delegate.keyHandler) {
             delegate.keyHandler(delegate.windowId,
                                 (uint32_t)[event keyCode],
-                                [self modifierMaskFromEvent:event],
+                                modifierBitmaskFromFlags([event modifierFlags]),
                                 1,
                                 [event isARepeat] ? 1 : 0);
         }
@@ -2975,7 +2978,7 @@ runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
         if (delegate && delegate.keyHandler) {
             delegate.keyHandler(delegate.windowId,
                                 (uint32_t)[event keyCode],
-                                [self modifierMaskFromEvent:event],
+                                modifierBitmaskFromFlags([event modifierFlags]),
                                 0,
                                 0);
         }
@@ -8226,6 +8229,169 @@ const char* getWebviewHTMLContent(uint32_t webviewId) {
     [webviewHTMLLock unlock];
 
     return result;
+}
+
+/*
+ * =============================================================================
+ * KEYBOARD GRAB (CGEventTap)
+ * =============================================================================
+ * Intercepts all keyboard events at the HID level when the target window is
+ * focused, allowing capture of system shortcuts like Cmd-Tab.  Requires
+ * Accessibility permissions (same as CGEventPost on the server side).
+ */
+
+static CFMachPortRef  g_keyboardGrabTap      = nullptr;
+static CFRunLoopSourceRef g_keyboardGrabSource = nullptr;
+static uint32_t       g_keyboardGrabWindowId  = 0;
+static WindowKeyHandler g_keyboardGrabHandler = nullptr;
+
+// Key combos to pass through to the app instead of capturing.
+struct KeyCombo { uint32_t keyCode; uint32_t modifiers; };
+static constexpr uint32_t kMaxExclusions = 16;
+static KeyCombo g_keyboardGrabExclusions[kMaxExclusions];
+static uint32_t g_keyboardGrabExcludeCount = 0;
+
+static CGEventRef keyboardGrabCallback(CGEventTapProxy proxy,
+                                        CGEventType type,
+                                        CGEventRef event,
+                                        void *userInfo) {
+    // The tap can be disabled by the OS if it takes too long — re-enable it.
+    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        if (g_keyboardGrabTap) {
+            CGEventTapEnable(g_keyboardGrabTap, true);
+        }
+        return event;
+    }
+
+    // Only intercept when our target window is the key window.
+    NSWindow *keyWindow = [NSApp keyWindow];
+    if (!keyWindow) return event;
+
+    WindowDelegate *delegate = objc_getAssociatedObject(keyWindow, "WindowDelegate");
+    if (!delegate || delegate.windowId != g_keyboardGrabWindowId) return event;
+
+    // Extract key info
+    CGKeyCode keyCode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+    CGEventFlags flags = CGEventGetFlags(event);
+    uint32_t mods = modifierBitmaskFromFlags(flags);
+
+    // Let excluded key combos pass through to the app's menu system.
+    // Check both keyDown and keyUp so the app sees a complete press/release cycle.
+    if ((type == kCGEventKeyDown || type == kCGEventKeyUp) && g_keyboardGrabExcludeCount > 0) {
+        for (uint32_t i = 0; i < g_keyboardGrabExcludeCount; i++) {
+            if ((uint32_t)keyCode == g_keyboardGrabExclusions[i].keyCode &&
+                mods == g_keyboardGrabExclusions[i].modifiers) {
+                return event;
+            }
+        }
+    }
+
+    if (type == kCGEventFlagsChanged) {
+        // Determine if the modifier key is pressed or released
+        uint32_t isDown = 0;
+        switch (keyCode) {
+            case 0x38: case 0x3C: // shift
+                isDown = (flags & kCGEventFlagMaskShift) ? 1 : 0; break;
+            case 0x3B: case 0x3E: // control
+                isDown = (flags & kCGEventFlagMaskControl) ? 1 : 0; break;
+            case 0x3A: case 0x3D: // option
+                isDown = (flags & kCGEventFlagMaskAlternate) ? 1 : 0; break;
+            case 0x37: case 0x36: // command
+                isDown = (flags & kCGEventFlagMaskCommand) ? 1 : 0; break;
+            default:
+                return event; // Unknown modifier — pass through
+        }
+        if (g_keyboardGrabHandler) {
+            g_keyboardGrabHandler(g_keyboardGrabWindowId, (uint32_t)keyCode, mods, isDown, 0);
+        }
+        return NULL; // Suppress
+    }
+
+    uint32_t isDown = (type == kCGEventKeyDown) ? 1 : 0;
+    uint32_t isRepeat = 0;
+    if (type == kCGEventKeyDown) {
+        isRepeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) ? 1 : 0;
+    }
+
+    if (g_keyboardGrabHandler) {
+        g_keyboardGrabHandler(g_keyboardGrabWindowId, (uint32_t)keyCode, mods, isDown, isRepeat);
+    }
+
+    return NULL; // Suppress the event — we forwarded it to the remote side
+}
+
+extern "C" BOOL enableKeyboardGrab(uint32_t windowId) {
+    if (g_keyboardGrabTap) {
+        NSLog(@"[KeyboardGrab] Already active for window %u", g_keyboardGrabWindowId);
+        return NO;
+    }
+
+    // Find the window and its key handler
+    for (NSWindow *window in [NSApp windows]) {
+        WindowDelegate *delegate = objc_getAssociatedObject(window, "WindowDelegate");
+        if (delegate && delegate.windowId == windowId) {
+            g_keyboardGrabWindowId = windowId;
+            g_keyboardGrabHandler = delegate.keyHandler;
+            break;
+        }
+    }
+
+    if (!g_keyboardGrabHandler) {
+        NSLog(@"[KeyboardGrab] No window found with id %u", windowId);
+        return NO;
+    }
+
+    CGEventMask mask = CGEventMaskBit(kCGEventKeyDown)
+                     | CGEventMaskBit(kCGEventKeyUp)
+                     | CGEventMaskBit(kCGEventFlagsChanged);
+
+    g_keyboardGrabTap = CGEventTapCreate(
+        kCGSessionEventTap,
+        kCGHeadInsertEventTap,
+        kCGEventTapOptionDefault,
+        mask,
+        keyboardGrabCallback,
+        NULL
+    );
+
+    if (!g_keyboardGrabTap) {
+        NSLog(@"[KeyboardGrab] CGEventTapCreate failed — check Accessibility permissions");
+        g_keyboardGrabHandler = nullptr;
+        g_keyboardGrabWindowId = 0;
+        return NO;
+    }
+
+    g_keyboardGrabSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, g_keyboardGrabTap, 0);
+    CFRunLoopAddSource(CFRunLoopGetMain(), g_keyboardGrabSource, kCFRunLoopCommonModes);
+    CGEventTapEnable(g_keyboardGrabTap, true);
+
+    NSLog(@"[KeyboardGrab] Enabled for window %u", windowId);
+    return YES;
+}
+
+extern "C" void disableKeyboardGrab(void) {
+    if (g_keyboardGrabTap) {
+        CGEventTapEnable(g_keyboardGrabTap, false);
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), g_keyboardGrabSource, kCFRunLoopCommonModes);
+        CFRelease(g_keyboardGrabSource);
+        CFRelease(g_keyboardGrabTap);
+        g_keyboardGrabSource = nullptr;
+        g_keyboardGrabTap = nullptr;
+        NSLog(@"[KeyboardGrab] Disabled for window %u", g_keyboardGrabWindowId);
+        g_keyboardGrabWindowId = 0;
+        g_keyboardGrabHandler = nullptr;
+        g_keyboardGrabExcludeCount = 0;
+    }
+}
+
+extern "C" BOOL addKeyboardGrabExclusion(uint32_t keyCode, uint32_t modifiers) {
+    if (g_keyboardGrabExcludeCount >= kMaxExclusions) {
+        NSLog(@"[KeyboardGrab] Exclusion list full (%u max)", kMaxExclusions);
+        return NO;
+    }
+    g_keyboardGrabExclusions[g_keyboardGrabExcludeCount++] = { keyCode, modifiers };
+    NSLog(@"[KeyboardGrab] Excluded keyCode=0x%02X modifiers=0x%X", keyCode, modifiers);
+    return YES;
 }
 
 /*
