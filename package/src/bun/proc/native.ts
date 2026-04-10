@@ -106,6 +106,8 @@ export const native = (() => {
 					FFIType.function, // mouseButtonHandler
 					FFIType.function, // mouseMoveHandler
 					FFIType.function, // scrollHandler
+					FFIType.function, // mouseExitedHandler
+					FFIType.function, // mouseEnteredHandler
 				],
 				returns: FFIType.ptr,
 			},
@@ -843,6 +845,8 @@ export const ffi = {
 				windowMouseButtonCallback,
 				windowMouseMoveCallback,
 				windowScrollCallback,
+				windowMouseExitedCallback,
+				windowMouseEnteredCallback,
 			);
 
 			if (!windowPtr) {
@@ -1996,6 +2000,34 @@ const windowScrollCallback = new JSCallback(
 	},
 	{
 		args: ["u32", "f32", "f32", "f32", "f32"],
+		returns: "void",
+		threadsafe: true,
+	},
+);
+
+const windowMouseExitedCallback = new JSCallback(
+	(id, x, y) => {
+		const handler = electrobunEventEmitter.events.window.mouseExited;
+		const event = handler({ id, x, y });
+		electrobunEventEmitter.emitEvent(event);
+		electrobunEventEmitter.emitEvent(event, id);
+	},
+	{
+		args: ["u32", "f32", "f32"],
+		returns: "void",
+		threadsafe: true,
+	},
+);
+
+const windowMouseEnteredCallback = new JSCallback(
+	(id, x, y) => {
+		const handler = electrobunEventEmitter.events.window.mouseEntered;
+		const event = handler({ id, x, y });
+		electrobunEventEmitter.emitEvent(event);
+		electrobunEventEmitter.emitEvent(event, id);
+	},
+	{
+		args: ["u32", "f32", "f32"],
 		returns: "void",
 		threadsafe: true,
 	},

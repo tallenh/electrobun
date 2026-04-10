@@ -896,6 +896,8 @@ static NSMutableDictionary<NSNumber *, AbstractView *> *globalAbstractViews = ni
     @property (nonatomic, assign) WindowMouseButtonHandler mouseButtonHandler;
     @property (nonatomic, assign) WindowMouseMoveHandler mouseMoveHandler;
     @property (nonatomic, assign) WindowScrollHandler scrollHandler;
+    @property (nonatomic, assign) WindowMouseCrossingHandler mouseExitedHandler;
+    @property (nonatomic, assign) WindowMouseCrossingHandler mouseEnteredHandler;
     @property (nonatomic, assign) uint32_t windowId;
     @property (nonatomic, strong) NSWindow *window;
     @property (nonatomic, assign) BOOL forceClose;
@@ -3085,6 +3087,20 @@ static inline uint32_t modifierBitmaskFromFlags(uint64_t flags) {
         float dx = (float)[event scrollingDeltaX];
         float dy = (float)[event scrollingDeltaY];
         delegate.scrollHandler(delegate.windowId, dx, dy, (float)point.x, (float)point.y);
+    }
+
+    // Mouse enter/exit (tracking area crossing)
+    - (void)mouseExited:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseExitedHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseExitedHandler(delegate.windowId, (float)point.x, (float)point.y);
+    }
+    - (void)mouseEntered:(NSEvent*)event {
+        WindowDelegate *delegate = (WindowDelegate *)self.window.delegate;
+        if (!delegate || !delegate.mouseEnteredHandler) return;
+        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        delegate.mouseEnteredHandler(delegate.windowId, (float)point.x, (float)point.y);
     }
 @end
 
@@ -7138,7 +7154,9 @@ NSWindow *createNSWindowWithFrameAndStyle(uint32_t windowId,
                                                      WindowKeyHandler zigKeyHandler,
                                                      WindowMouseButtonHandler zigMouseButtonHandler,
                                                      WindowMouseMoveHandler zigMouseMoveHandler,
-                                                     WindowScrollHandler zigScrollHandler) {
+                                                     WindowScrollHandler zigScrollHandler,
+                                                     WindowMouseCrossingHandler zigMouseExitedHandler,
+                                                     WindowMouseCrossingHandler zigMouseEnteredHandler) {
     
     NSScreen *primaryScreen = [NSScreen screens][0];
     NSRect screenFrame = [primaryScreen frame];
@@ -7165,6 +7183,8 @@ NSWindow *createNSWindowWithFrameAndStyle(uint32_t windowId,
     delegate.mouseButtonHandler = zigMouseButtonHandler;
     delegate.mouseMoveHandler = zigMouseMoveHandler;
     delegate.scrollHandler = zigScrollHandler;
+    delegate.mouseExitedHandler = zigMouseExitedHandler;
+    delegate.mouseEnteredHandler = zigMouseEnteredHandler;
     delegate.windowId = windowId;
     delegate.window = window;
     [window setDelegate:delegate];
@@ -7201,7 +7221,9 @@ extern "C" NSWindow *createWindowWithFrameAndStyleFromWorker(
   WindowKeyHandler zigKeyHandler,
   WindowMouseButtonHandler zigMouseButtonHandler,
   WindowMouseMoveHandler zigMouseMoveHandler,
-  WindowScrollHandler zigScrollHandler
+  WindowScrollHandler zigScrollHandler,
+  WindowMouseCrossingHandler zigMouseExitedHandler,
+  WindowMouseCrossingHandler zigMouseEnteredHandler
   ) {
 
     // Validate frame values - use defaults if NaN or invalid
@@ -7233,7 +7255,9 @@ extern "C" NSWindow *createWindowWithFrameAndStyleFromWorker(
             zigKeyHandler,
             zigMouseButtonHandler,
             zigMouseMoveHandler,
-            zigScrollHandler
+            zigScrollHandler,
+            zigMouseExitedHandler,
+            zigMouseEnteredHandler
         );
 
         // Handle transparent window background

@@ -13,6 +13,7 @@ type KeyData = { id: number; keyCode: number; modifiers: number; isRepeat: boole
 type MouseButtonData = { id: number; x: number; y: number; button: number };
 type MouseMoveData = { id: number; x: number; y: number; buttonState: number };
 type ScrollData = { id: number; dx: number; dy: number; x: number; y: number };
+type MouseCrossingData = { id: number; x: number; y: number };
 
 export default {
 	closeRequested: (data: IdData) =>
@@ -29,4 +30,6 @@ export default {
 	mouseUp: (data: MouseButtonData) => new ElectrobunEvent<MouseButtonData, {}>("mouseUp", data),
 	mouseMove: (data: MouseMoveData) => new ElectrobunEvent<MouseMoveData, {}>("mouseMove", data),
 	scroll: (data: ScrollData) => new ElectrobunEvent<ScrollData, {}>("scroll", data),
+	mouseExited: (data: MouseCrossingData) => new ElectrobunEvent<MouseCrossingData, {}>("mouseExited", data),
+	mouseEntered: (data: MouseCrossingData) => new ElectrobunEvent<MouseCrossingData, {}>("mouseEntered", data),
 };
